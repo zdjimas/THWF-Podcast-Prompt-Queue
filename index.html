@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prompt Queue — Zero Cost</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --panel-2: #1d2230;
+      --text: #edf1f7;
+      --muted: #a7b0c0;
+      --line: #2a3142;
+      --good: #2ecc71;
+      --warn: #f1c40f;
+      --bad: #ff6b6b;
+      --accent: #6ea8fe;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: linear-gradient(180deg, #0d1016, #121725);
+      color: var(--text);
+      padding: 24px;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    p, .meta { color: var(--muted); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 18px;
+      margin-top: 18px;
+    }
+    .card {
+      background: rgba(23,26,33,.95);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 10px 24px rgba(0,0,0,.25);
+    }
+    label { display: block; margin: 12px 0 6px; font-weight: 600; }
+    input, textarea, select {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 11px 12px;
+      font: inherit;
+    }
+    textarea { min-height: 180px; resize: vertical; }
+    button {
+      border: 1px solid #35538f;
+      background: #264b8d;
+      color: white;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font: inherit;
+      cursor: pointer;
+      margin: 6px 8px 0 0;
+    }
+    button.secondary { background: transparent; border-color: var(--line); }
+    button.warn { background: #665100; border-color: #8a6d00; }
+    button.bad { background: #7a1f2b; border-color: #a52a3b; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    .msg { min-height: 20px; margin-top: 10px; font-size: 14px; }
+    .ok { color: var(--good); }
+    .err { color: var(--bad); }
+    .hidden { display: none !important; }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+    .pill {
+      display: inline-block;
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      margin-left: 8px;
+    }
+    .pending { color: #f5d76e; border-color: #6d5f2d; background: rgba(241,196,15,.08); }
+    .complete { color: #74e5a7; border-color: #29513a; background: rgba(46,204,113,.08); }
+    .item {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      margin-top: 12px;
+      background: rgba(29,34,48,.65);
+    }
+    .item h3 { margin: 0 0 4px; font-size: 18px; }
+    .item pre {
+      margin: 12px 0 0;
+      white-space: pre-wrap;
+      font: inherit;
+      color: #dde5f1;
+      background: rgba(0,0,0,.18);
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 720px) { .split { grid-template-columns: 1fr; } }
+    .small { font-size: 13px; color: var(--muted); }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .kbd {
+      border: 1px solid var(--line);
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 12px;
+      background: rgba(255,255,255,.04);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <h1>Prompt Queue — Zero Cost</h1>
+        <p>This is a single-page static app for GitHub Pages. It uses one admin code to unlock both submission and admin controls, stores the queue locally in the browser, and can export or import an encrypted JSON backup file.</p>
+      </div>
+      <div class="small">No backend • No Fly.io • No monthly cost</div>
+    </div>
+
+    <div class="card" id="loginCard">
+      <h2 style="margin-top:0;">Unlock access</h2>
+      <p class="small">Enter the shared admin code. The app compares a SHA-256 hash in the browser. This is acceptable for a lightweight private tool, but it is not server-grade security.</p>
+      <label for="accessCode">Admin code</label>
+      <input id="accessCode" type="password" autocomplete="off" placeholder="Enter shared admin code">
+      <div class="toolbar">
+        <button id="unlockBtn">Unlock</button>
+        <button class="secondary" id="rememberBtn" type="button">Remember on this device</button>
+        <button class="secondary" id="clearSavedBtn" type="button">Clear saved code</button>
+      </div>
+      <div class="msg" id="loginMsg"></div>
+      <p class="small">To change the admin code later, update <span class="kbd">ADMIN_CODE_HASH</span> in the script with a new SHA-256 hash.</p>
+    </div>
+
+    <div id="app" class="hidden">
+      <div class="grid">
+        <section class="card">
+          <h2 style="margin-top:0;">Submit prompt</h2>
+          <label for="title">Title</label>
+          <input id="title" maxlength="200" placeholder="Episode title or prompt title">
+
+          <label for="prompt">Prompt</label>
+          <textarea id="prompt" placeholder="Enter the long-form prompt here"></textarea>
+
+          <div class="toolbar">
+            <button id="submitBtn">Submit</button>
+            <button class="secondary" id="clearFormBtn" type="button">Clear form</button>
+          </div>
+          <div class="msg" id="submitMsg"></div>
+          <p class="small">New submissions are automatically marked <strong>pending</strong>.</p>
+        </section>
+
+        <section class="card">
+          <h2 style="margin-top:0;">Queue controls</h2>
+          <div class="split">
+            <div>
+              <label for="backupPass">Backup encryption passphrase</label>
+              <input id="backupPass" type="password" placeholder="Used only for export/import file encryption">
+            </div>
+            <div>
+              <label for="filterStatus">Filter</label>
+              <select id="filterStatus">
+                <option value="all">All</option>
+                <option value="pending">Pending only</option>
+                <option value="complete">Complete only</option>
+              </select>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button id="exportBtn" class="warn" type="button">Export encrypted file</button>
+            <button id="importBtn" class="secondary" type="button">Import encrypted file</button>
+            <button id="purgeCompletedBtn" class="bad" type="button">Delete completed</button>
+            <button id="logoutBtn" class="secondary" type="button">Lock app</button>
+          </div>
+          <input id="importFile" type="file" accept="application/json" class="hidden">
+          <div class="msg" id="adminMsg"></div>
+          <p class="small">Export gives you a real encrypted file backup. Import restores it. This is the closest free static-file approach to “saving to a file” without paying for a backend.</p>
+        </section>
+      </div>
+
+      <section class="card" style="margin-top:18px;">
+        <div class="topbar">
+          <div>
+            <h2 style="margin:0;">Queue</h2>
+            <div class="small" id="queueStats"></div>
+          </div>
+        </div>
+        <div id="queue"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      // Replace this hash with the SHA-256 hash of YOUR admin code.
+      // Default code for first-time setup is: ChangeMeNow123!
+      const ADMIN_CODE_HASH = '1f98cda8fb4ffb0c8f62ba4df0a8ed217f7b22f8d645ca69c3d8c7c0aadb1fce';
+
+      const STORAGE_KEY = 'jpq_zero_cost_queue_v1';
+      const SAVE_CODE_KEY = 'jpq_zero_cost_saved_code_v1';
+
+      const $ = (id) => document.getElementById(id);
+      const app = $('app');
+      const loginCard = $('loginCard');
+
+      const state = {
+        unlocked: false,
+        queue: loadQueue(),
+      };
+
+      function showMsg(el, text, ok = true) {
+        el.textContent = text;
+        el.className = 'msg ' + (ok ? 'ok' : 'err');
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function loadQueue() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return [];
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function persistQueue() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.queue));
+      }
+
+      async function sha256Hex(text) {
+        const data = new TextEncoder().encode(text);
+        const hash = await crypto.subtle.digest('SHA-256', data);
+        return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+
+      function downloadFile(name, text, mime = 'application/json') {
+        const blob = new Blob([text], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      async function deriveKey(passphrase, salt) {
+        const material = await crypto.subtle.importKey(
+          'raw',
+          new TextEncoder().encode(passphrase),
+          'PBKDF2',
+          false,
+          ['deriveKey']
+        );
+        return crypto.subtle.deriveKey(
+          { name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' },
+          material,
+          { name: 'AES-GCM', length: 256 },
+          false,
+          ['encrypt', 'decrypt']
+        );
+      }
+
+      function toBase64(bytes) {
+        let binary = '';
+        bytes.forEach(b => binary += String.fromCharCode(b));
+        return btoa(binary);
+      }
+
+      function fromBase64(b64) {
+        const binary = atob(b64);
+        return Uint8Array.from(binary, c => c.charCodeAt(0));
+      }
+
+      async function encryptJsonObject(obj, passphrase) {
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const key = await deriveKey(passphrase, salt);
+        const plaintext = new TextEncoder().encode(JSON.stringify(obj, null, 2));
+        const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext));
+        return {
+          version: 1,
+          alg: 'AES-GCM',
+          kdf: 'PBKDF2-SHA-256',
+          iterations: 250000,
+          salt: toBase64(salt),
+          iv: toBase64(iv),
+          ciphertext: toBase64(ciphertext)
+        };
+      }
+
+      async function decryptJsonObject(payload, passphrase) {
+        const salt = fromBase64(payload.salt);
+        const iv = fromBase64(payload.iv);
+        const ciphertext = fromBase64(payload.ciphertext);
+        const key = await deriveKey(passphrase, salt);
+        const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+        return JSON.parse(new TextDecoder().decode(plaintext));
+      }
+
+      function nowIso() {
+        return new Date().toISOString();
+      }
+
+      function prettyDate(iso) {
+        try { return new Date(iso).toLocaleString(); }
+        catch { return iso || ''; }
+      }
+
+      function renderQueue() {
+        const filter = $('filterStatus').value;
+        const queueEl = $('queue');
+        const filtered = state.queue.filter(item => filter === 'all' ? true : item.status === filter);
+        const pendingCount = state.queue.filter(x => x.status === 'pending').length;
+        const completeCount = state.queue.filter(x => x.status === 'complete').length;
+        $('queueStats').textContent = `${state.queue.length} total • ${pendingCount} pending • ${completeCount} complete`;
+
+        if (!filtered.length) {
+          queueEl.innerHTML = '<p class="small">No items match the current filter.</p>';
+          return;
+        }
+
+        queueEl.innerHTML = filtered.map(item => `
+          <div class="item">
+            <h3>${escapeHtml(item.title)}
+              <span class="pill ${item.status === 'pending' ? 'pending' : 'complete'}">${item.status}</span>
+            </h3>
+            <div class="small">Submitted ${escapeHtml(prettyDate(item.createdAt))}${item.completedAt ? ` • Completed ${escapeHtml(prettyDate(item.completedAt))}` : ''}</div>
+            <pre>${escapeHtml(item.prompt)}</pre>
+            <div class="toolbar">
+              <button type="button" data-action="copy-title" data-id="${item.id}" class="secondary">Copy title</button>
+              <button type="button" data-action="copy-prompt" data-id="${item.id}" class="secondary">Copy prompt</button>
+              ${item.status === 'pending'
+                ? `<button type="button" data-action="complete" data-id="${item.id}">Mark complete</button>`
+                : `<button type="button" data-action="pending" data-id="${item.id}" class="warn">Return to pending</button>`}
+              <button type="button" data-action="delete" data-id="${item.id}" class="bad">Delete</button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      async function unlock() {
+        const code = $('accessCode').value;
+        if (!code) {
+          showMsg($('loginMsg'), 'Admin code required.', false);
+          return;
+        }
+        const hash = await sha256Hex(code);
+        if (hash !== ADMIN_CODE_HASH) {
+          showMsg($('loginMsg'), 'Invalid admin code.', false);
+          return;
+        }
+        state.unlocked = true;
+        loginCard.classList.add('hidden');
+        app.classList.remove('hidden');
+        showMsg($('loginMsg'), 'Unlocked.', true);
+        renderQueue();
+      }
+
+      function lock() {
+        state.unlocked = false;
+        $('accessCode').value = '';
+        app.classList.add('hidden');
+        loginCard.classList.remove('hidden');
+        showMsg($('loginMsg'), 'App locked.', true);
+      }
+
+      $('unlockBtn').addEventListener('click', unlock);
+      $('accessCode').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') unlock();
+      });
+
+      $('rememberBtn').addEventListener('click', () => {
+        const code = $('accessCode').value.trim();
+        if (!code) {
+          showMsg($('loginMsg'), 'Enter the code first if you want to save it on this device.', false);
+          return;
+        }
+        localStorage.setItem(SAVE_CODE_KEY, code);
+        showMsg($('loginMsg'), 'Saved locally on this device only.', true);
+      });
+
+      $('clearSavedBtn').addEventListener('click', () => {
+        localStorage.removeItem(SAVE_CODE_KEY);
+        showMsg($('loginMsg'), 'Saved code cleared from this device.', true);
+      });
+
+      $('submitBtn').addEventListener('click', () => {
+        const title = $('title').value.trim();
+        const prompt = $('prompt').value.trim();
+        if (!title || !prompt) {
+          showMsg($('submitMsg'), 'Title and prompt are required.', false);
+          return;
+        }
+        const item = {
+          id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2),
+          title,
+          prompt,
+          status: 'pending',
+          createdAt: nowIso(),
+          completedAt: null,
+        };
+        state.queue.unshift(item);
+        persistQueue();
+        $('title').value = '';
+        $('prompt').value = '';
+        showMsg($('submitMsg'), 'Submitted. Item added as pending.', true);
+        renderQueue();
+      });
+
+      $('clearFormBtn').addEventListener('click', () => {
+        $('title').value = '';
+        $('prompt').value = '';
+        showMsg($('submitMsg'), 'Form cleared.', true);
+      });
+
+      $('filterStatus').addEventListener('change', renderQueue);
+
+      $('queue').addEventListener('click', async (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const { action, id } = btn.dataset;
+        const item = state.queue.find(x => x.id === id);
+        if (!item) return;
+
+        try {
+          if (action === 'copy-title') {
+            await navigator.clipboard.writeText(item.title || '');
+            showMsg($('adminMsg'), 'Title copied.', true);
+            return;
+          }
+          if (action === 'copy-prompt') {
+            await navigator.clipboard.writeText(item.prompt || '');
+            showMsg($('adminMsg'), 'Prompt copied.', true);
+            return;
+          }
+          if (action === 'complete') {
+            item.status = 'complete';
+            item.completedAt = nowIso();
+          }
+          if (action === 'pending') {
+            item.status = 'pending';
+            item.completedAt = null;
+          }
+          if (action === 'delete') {
+            if (!confirm('Delete this item permanently from the queue on this device?')) return;
+            state.queue = state.queue.filter(x => x.id !== id);
+          }
+          persistQueue();
+          renderQueue();
+          showMsg($('adminMsg'), 'Queue updated.', true);
+        } catch (err) {
+          showMsg($('adminMsg'), err.message || 'Action failed.', false);
+        }
+      });
+
+      $('purgeCompletedBtn').addEventListener('click', () => {
+        const count = state.queue.filter(x => x.status === 'complete').length;
+        if (!count) {
+          showMsg($('adminMsg'), 'No completed items to delete.', false);
+          return;
+        }
+        if (!confirm(`Delete ${count} completed item(s)? This only affects local storage unless you export afterward.`)) return;
+        state.queue = state.queue.filter(x => x.status !== 'complete');
+        persistQueue();
+        renderQueue();
+        showMsg($('adminMsg'), 'Completed items deleted.', true);
+      });
+
+      $('exportBtn').addEventListener('click', async () => {
+        const passphrase = $('backupPass').value;
+        if (!passphrase) {
+          showMsg($('adminMsg'), 'Enter a backup encryption passphrase first.', false);
+          return;
+        }
+        try {
+          const payload = await encryptJsonObject({ queue: state.queue, exportedAt: nowIso() }, passphrase);
+          const filename = `prompt-queue-backup-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+          downloadFile(filename, JSON.stringify(payload, null, 2));
+          showMsg($('adminMsg'), 'Encrypted backup exported.', true);
+        } catch (err) {
+          showMsg($('adminMsg'), err.message || 'Export failed.', false);
+        }
+      });
+
+      $('importBtn').addEventListener('click', () => $('importFile').click());
+
+      $('importFile').addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        const passphrase = $('backupPass').value;
+        if (!file) return;
+        if (!passphrase) {
+          showMsg($('adminMsg'), 'Enter the backup encryption passphrase before importing.', false);
+          e.target.value = '';
+          return;
+        }
+        try {
+          const text = await file.text();
+          const payload = JSON.parse(text);
+          const data = await decryptJsonObject(payload, passphrase);
+          if (!Array.isArray(data.queue)) throw new Error('Imported file does not contain a valid queue.');
+          state.queue = data.queue;
+          persistQueue();
+          renderQueue();
+          showMsg($('adminMsg'), 'Encrypted backup imported successfully.', true);
+        } catch (err) {
+          showMsg($('adminMsg'), err.message || 'Import failed. Wrong passphrase or invalid file.', false);
+        } finally {
+          e.target.value = '';
+        }
+      });
+
+      $('logoutBtn').addEventListener('click', lock);
+
+      const savedCode = localStorage.getItem(SAVE_CODE_KEY);
+      if (savedCode) $('accessCode').value = savedCode;
+      renderQueue();
+    })();
+  </script>
+</body>
+</html>
