@@ -1,0 +1,7 @@
+name = "thwf-shared-queue"
+main = "worker.js"
+compatibility_date = "2026-04-21"
+
+[[kv_namespaces]]
+binding = "QUEUE_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
