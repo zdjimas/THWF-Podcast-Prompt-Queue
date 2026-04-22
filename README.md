@@ -1,85 +1,78 @@
-# Jellypod Prompt Queue — Zero Cost Static Version
+# THWF Shared Queue v2
 
-A zero-cost, single-page prompt queue for GitHub Pages.
+This package updates the shared GitHub Pages + Cloudflare Worker version with:
 
-## What it does
-- One **admin code** unlocks both prompt submission and admin view
-- New submissions are stored as **Pending**
-- Admin can:
-  - mark entries **Complete**
-  - move entries back to **Pending**
-  - **delete** entries
-- Queue data is stored **locally in the browser**
-- You can **export** and **import** an **encrypted backup file**
+1. **Podcast Prompt Queue** enhancements
+   - Adds optional **Host Names** field
+   - Max length: **30 characters**
 
-## Important limitation
-This is a **fully static** GitHub Pages app.
-
-That means:
-- it does **not** use Fly.io
-- it does **not** use a backend
-- it does **not** create a live shared queue for multiple people automatically
-
-If 3 people use this site on 3 different browsers, each browser has its own local queue **unless you export and import the encrypted backup file**.
+2. **Promotions Tracker** module
+   - New top tab in the same `index.html`
+   - Uses the **same shared login** and the **same Cloudflare Worker**
+   - Shared across users, devices, and refreshes
 
 ## Files
-- `index.html` — the full application
-- `README.md` — setup and publish instructions
-- `.gitignore` — ignores OS artifacts
 
-## Publish on GitHub Pages
-1. Create a new GitHub repository.
-2. Upload these files to the repository root.
-3. In GitHub, go to **Settings → Pages**.
-4. Set:
-   - **Source:** Deploy from a branch
-   - **Branch:** `main`
-   - **Folder:** `/ (root)`
-5. Save and wait for the site to publish.
+- `index.html` — replace your current GitHub Pages front end with this
+- `cloudflare-worker/worker.js` — replace your existing Cloudflare Worker code with this
+- `cloudflare-worker/wrangler.toml` — sample Wrangler config
 
-## Default admin code
-The starter admin code in `index.html` is:
+## Podcast prompt fields
 
-`ChangeMeNow123!`
+- Title
+- Host Names *(optional, max 30 chars)*
+- Prompt
 
-Change it before publishing.
+## Promotions tracker fields
 
-## How to change the admin code
-Inside `index.html`, find:
+- Promotion Platform
+- Date
+- Video Title
+- Paid by
+
+## Shared behavior
+
+Both tabs:
+- use the **same login code**
+- store data remotely in Cloudflare KV
+- support **pending / complete / delete** per record
+- show the same records to all users after refresh
+
+## Front-end update
+
+In `index.html`, set:
 
 ```js
-const ADMIN_CODE_HASH = '...';
+const API_BASE = 'https://YOUR-WORKER.workers.dev';
 ```
 
-Replace it with the SHA-256 hash of your own code.
+## Worker setup
 
-### Generate a SHA-256 hash on Mac or Linux
-```bash
-printf "YourNewAdminCodeHere" | shasum -a 256
+In Cloudflare:
+
+1. Replace your current Worker code with `cloudflare-worker/worker.js`
+2. Bind your existing KV namespace to `QUEUE_KV`
+3. Set secret:
+   - `ADMIN_CODE`
+4. Set variable:
+   - `FRONTEND_ORIGIN` = `https://zdjimas.github.io`
+     or, if you want to be more specific,
+   - `https://zdjimas.github.io/THWF-Podcast-Prompt-Queue`
+
+## Important CORS note
+
+If you use `FRONTEND_ORIGIN`, prefer this value:
+
+```text
+https://zdjimas.github.io
 ```
 
-### Generate a SHA-256 hash in PowerShell
-```powershell
-$input = "YourNewAdminCodeHere"
-$bytes = [System.Text.Encoding]::UTF8.GetBytes($input)
-$hash = [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
--join ($hash | ForEach-Object { $_.ToString("x2") })
-```
+That is the true browser origin for GitHub Pages project sites.
 
-Copy the resulting hash into `ADMIN_CODE_HASH`.
+## Deployment order
 
-## Removing Fly.io from your old setup
-You no longer need:
-- `server.js`
-- `Dockerfile`
-- `fly.toml`
-- Fly.io deployment
-- API secrets for submit/admin routes
-
-## Honest recommendation
-Use this version if you want:
-- zero hosting cost
-- no backend maintenance
-- simple personal or very small trusted use
-
-If you later want a **shared live queue** for multiple people, the lightest next step is a free-tier backend such as **Cloudflare Workers + KV**.
+1. Update the Worker in Cloudflare and deploy it
+2. Copy the Worker URL
+3. Update `index.html` with the Worker URL
+4. Commit `index.html` to GitHub
+5. Refresh the site
