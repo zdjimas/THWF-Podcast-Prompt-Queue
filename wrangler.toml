@@ -1,4 +1,4 @@
-name = "thwf-shared-queue"
+name = "name = "thwf-podcast-prompt-queue"
 main = "worker.js"
 compatibility_date = "2026-04-21"
 
