@@ -4,4 +4,4 @@ compatibility_date = "2026-04-21"
 
 [[kv_namespaces]]
 binding = "QUEUE_KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "8a1a443956934c8e82c6b6a94e0bbb75"
