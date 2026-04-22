@@ -226,6 +226,10 @@
             <label for="promoPaidBy">Paid by</label>
             <input id="promoPaidBy" type="text" placeholder="Zach, Han, or other">
           </div>
+          <div class="field">
+            <label for="promoAmount">Amount ($)</label>
+            <input id="promoAmount" type="text" placeholder="$1,000.00">
+          </div>
           <div class="row">
             <button class="primary" id="promoSubmitBtn">Add record</button>
             <button id="promoClearBtn">Clear form</button>
@@ -412,6 +416,7 @@
             <div class="detail"><div class="k">Platform</div><div class="v">${escapeHtml(item.platform)}</div></div>
             <div class="detail"><div class="k">Date</div><div class="v">${escapeHtml(item.date || '—')}</div></div>
             <div class="detail"><div class="k">Paid By</div><div class="v">${escapeHtml(item.paidBy)}</div></div>
+            <div class="detail"><div class="k">Amount</div><div class="v">${escapeHtml(item.amount || '—')}</div></div>
           </div>
           <div class="row">
             <button data-kind="promo" data-action="copyTitle" data-id="${escapeHtml(item.id)}">Copy title</button>
@@ -451,17 +456,19 @@
       const date = byId('promoDate').value;
       const videoTitle = byId('promoVideoTitle').value.trim();
       const paidBy = byId('promoPaidBy').value.trim();
-      if (!platform || !date || !videoTitle || !paidBy) return setMsg(byId('promoSubmitMsg'), 'All promotion fields are required.', false);
+      const amount = byId('promoAmount').value.trim();
+      if (!platform || !date || !videoTitle || !paidBy || !amount) return setMsg(byId('promoSubmitMsg'), 'All promotion fields are required.', false);
       setMsg(byId('promoSubmitMsg'), 'Saving…');
       try {
         await api('/api/promotions', {
           method: 'POST',
-          body: JSON.stringify({ code: accessCode, platform, date, videoTitle, paidBy })
+          body: JSON.stringify({ code: accessCode, platform, date, videoTitle, paidBy, amount })
         });
         byId('promoPlatform').value = '';
         byId('promoDate').value = '';
         byId('promoVideoTitle').value = '';
         byId('promoPaidBy').value = '';
+        byId('promoAmount').value = '';
         setMsg(byId('promoSubmitMsg'), 'Promotion record saved.', true);
         await loadPromoQueue();
       } catch (err) {
@@ -551,6 +558,7 @@
       byId('promoDate').value = '';
       byId('promoVideoTitle').value = '';
       byId('promoPaidBy').value = '';
+      byId('promoAmount').value = '';
       setMsg(byId('promoSubmitMsg'), '');
     });
     byId('promoRefreshBtn').addEventListener('click', loadPromoQueue);
