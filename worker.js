@@ -1,4 +1,4 @@
-export default {
+ export default {
   async fetch(request, env) {
     return handleRequest(request, env);
   }
@@ -55,13 +55,16 @@ async function handleRequest(request, env) {
     if (path === '/api/podcast' && request.method === 'POST') {
       const body = await readBody(request);
       requireCode(body.code, env);
+
       if (!body.title?.trim() || !body.prompt?.trim()) {
         return json({ ok: false, error: 'Title and prompt are required.' }, 400, origin);
       }
+
       const hostNames = String(body.hostNames || '').trim();
       if (hostNames.length > 30) {
         return json({ ok: false, error: 'Host Names must be 30 characters or fewer.' }, 400, origin);
       }
+
       const list = await readList(env, PODCAST_KEY);
       list.unshift({
         id: crypto.randomUUID(),
@@ -72,27 +75,43 @@ async function handleRequest(request, env) {
         createdAt: new Date().toISOString(),
         completedAt: null
       });
+
       await writeList(env, PODCAST_KEY, list);
       return json({ ok: true }, 200, origin);
     }
 
+    // ✅ FIXED PROMOTIONS BLOCK
     if (path === '/api/promotions' && request.method === 'POST') {
       const body = await readBody(request);
       requireCode(body.code, env);
-      if (!body.platform?.trim() || !body.date || !body.videoTitle?.trim() || !body.paidBy?.trim()) {
+
+      const platform = String(body.platform || '').trim();
+      const date = String(body.date || '').trim();
+      const videoTitle = String(body.videoTitle || '').trim();
+      const paidBy = String(body.paidBy || '').trim();
+
+      const amount =
+        String(body.amount || '').trim() ||
+        String(body.promoAmount || '').trim() ||
+        String(body.dollarAmount || '').trim();
+
+      if (!platform || !date || !videoTitle || !paidBy || !amount) {
         return json({ ok: false, error: 'All promotion fields are required.' }, 400, origin);
       }
+
       const list = await readList(env, PROMO_KEY);
       list.unshift({
         id: crypto.randomUUID(),
-        platform: body.platform.trim(),
-        date: body.date,
-        videoTitle: body.videoTitle.trim(),
-        paidBy: body.paidBy.trim(),
+        platform,
+        date,
+        videoTitle,
+        paidBy,
+        amount, // 🔥 THIS IS THE FIX
         status: 'pending',
         createdAt: new Date().toISOString(),
         completedAt: null
       });
+
       await writeList(env, PROMO_KEY, list);
       return json({ ok: true }, 200, origin);
     }
@@ -134,6 +153,7 @@ async function handleItemMutation(request, env, origin, match, storageKey) {
   const [, id, action] = match;
   const body = await readBody(request);
   requireCode(body.code, env);
+
   const list = await readList(env, storageKey);
   const idx = list.findIndex(item => item.id === id);
   if (idx === -1) return json({ ok: false, error: 'Item not found.' }, 404, origin);
@@ -173,6 +193,7 @@ async function readBody(request) {
 async function readList(env, key) {
   const raw = await env.QUEUE_KV.get(key);
   if (!raw) return [];
+
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
