@@ -268,7 +268,6 @@
   </div>
 
   <script>
-   
     const API_BASE = "https://thwf-podcast-prompt-queue.zdjimas.workers.dev";
     const CODE_STORAGE_KEY = 'thwf_shared_code';
     let accessCode = '';
@@ -293,6 +292,20 @@
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
+    }
+
+    function getItemAmount(item) {
+      return item?.amount ?? item?.promoAmount ?? item?.dollarAmount ?? item?.dollars ?? item?.value ?? '';
+    }
+
+    function setTodayIfEmpty() {
+      const el = byId('promoDate');
+      if (!el || el.value) return;
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      el.value = `${yyyy}-${mm}-${dd}`;
     }
 
     async function api(path, options = {}) {
@@ -416,7 +429,7 @@
             <div class="detail"><div class="k">Platform</div><div class="v">${escapeHtml(item.platform)}</div></div>
             <div class="detail"><div class="k">Date</div><div class="v">${escapeHtml(item.date || '—')}</div></div>
             <div class="detail"><div class="k">Paid By</div><div class="v">${escapeHtml(item.paidBy)}</div></div>
-            <div class="detail"><div class="k">Amount</div><div class="v">${escapeHtml(item.amount || '—')}</div></div>
+            <div class="detail"><div class="k">Amount</div><div class="v">${escapeHtml(getItemAmount(item) || '—')}</div></div>
           </div>
           <div class="row">
             <button data-kind="promo" data-action="copyTitle" data-id="${escapeHtml(item.id)}">Copy title</button>
@@ -457,18 +470,35 @@
       const videoTitle = byId('promoVideoTitle').value.trim();
       const paidBy = byId('promoPaidBy').value.trim();
       const amount = byId('promoAmount').value.trim();
-      if (!platform || !date || !videoTitle || !paidBy || !amount) return setMsg(byId('promoSubmitMsg'), 'All promotion fields are required.', false);
+
+      if (!platform || !date || !videoTitle || !paidBy || !amount) {
+        return setMsg(byId('promoSubmitMsg'), 'All promotion fields are required.', false);
+      }
+
       setMsg(byId('promoSubmitMsg'), 'Saving…');
+
       try {
         await api('/api/promotions', {
           method: 'POST',
-          body: JSON.stringify({ code: accessCode, platform, date, videoTitle, paidBy, amount })
+          body: JSON.stringify({
+            code: accessCode,
+            platform,
+            date,
+            videoTitle,
+            paidBy,
+            amount,
+            promoAmount: amount,
+            dollarAmount: amount
+          })
         });
+
         byId('promoPlatform').value = '';
         byId('promoDate').value = '';
         byId('promoVideoTitle').value = '';
         byId('promoPaidBy').value = '';
         byId('promoAmount').value = '';
+        setTodayIfEmpty();
+
         setMsg(byId('promoSubmitMsg'), 'Promotion record saved.', true);
         await loadPromoQueue();
       } catch (err) {
@@ -559,6 +589,7 @@
       byId('promoVideoTitle').value = '';
       byId('promoPaidBy').value = '';
       byId('promoAmount').value = '';
+      setTodayIfEmpty();
       setMsg(byId('promoSubmitMsg'), '');
     });
     byId('promoRefreshBtn').addEventListener('click', loadPromoQueue);
@@ -566,6 +597,7 @@
     byId('promoFilter').addEventListener('change', renderPromoQueue);
 
     autoUnlockIfSaved();
+    setTodayIfEmpty();
   </script>
 </body>
 </html>
