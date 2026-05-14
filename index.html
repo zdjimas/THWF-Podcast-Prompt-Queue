@@ -228,7 +228,7 @@
           </div>
           <div class="field">
             <label for="promoAmount">Amount ($)</label>
-            <input id="promoAmount" type="text" placeholder="$1,000.00">
+            <input id="promoAmount" type="number" step="0.01" min="0" placeholder="1000.00">
           </div>
           <div class="row">
             <button class="primary" id="promoSubmitBtn">Add record</button>
@@ -253,6 +253,7 @@
           <div class="row">
             <button class="primary" id="promoRefreshBtn">Refresh records</button>
             <button class="danger" id="promoDeleteCompletedBtn">Delete completed</button>
+            <button id="promoExportBtn">Export CSV</button>
           </div>
           <div id="promoQueueMsg" class="msg"></div>
           <p class="small">This tracker is shared. Every refresh pulls the latest promotion records from the remote store.</p>
@@ -268,8 +269,10 @@
   </div>
 
   <script>
-  
+    
     const API_BASE = 'https://thwf-podcast-prompt-queue.zdjimas.workers.dev';
+
+
     const CODE_STORAGE_KEY = 'thwf_shared_code';
     let accessCode = '';
     let podcastItems = [];
@@ -295,28 +298,25 @@
         .replaceAll("'", '&#39;');
     }
 
-    function getItemAmount(item) {
-      return item?.amount ?? item?.promoAmount ?? item?.dollarAmount ?? item?.dollars ?? item?.value ?? '';
-    }
-
-    function setTodayIfEmpty() {
-      const el = byId('promoDate');
-      if (!el || el.value) return;
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm = String(today.getMonth() + 1).padStart(2, '0');
-      const dd = String(today.getDate()).padStart(2, '0');
-      el.value = `${yyyy}-${mm}-${dd}`;
-    }
-
     async function api(path, options = {}) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
       const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-      const res = await fetch(API_BASE.replace(/\/$/, '') + path, { ...options, headers });
-      const text = await res.text();
-      let data = {};
-      try { data = text ? JSON.parse(text) : {}; } catch {}
-      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-      return data;
+      try {
+        const res = await fetch(API_BASE.replace(/\/$/, '') + path, {
+          ...options, headers, signal: controller.signal, cache: 'no-store'
+        });
+        clearTimeout(timer);
+        const text = await res.text();
+        let data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch {}
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        return data;
+      } catch (err) {
+        clearTimeout(timer);
+        if (err.name === 'AbortError') throw new Error('Request timed out. Please try again.');
+        throw err;
+      }
     }
 
     async function unlock() {
@@ -430,7 +430,7 @@
             <div class="detail"><div class="k">Platform</div><div class="v">${escapeHtml(item.platform)}</div></div>
             <div class="detail"><div class="k">Date</div><div class="v">${escapeHtml(item.date || '—')}</div></div>
             <div class="detail"><div class="k">Paid By</div><div class="v">${escapeHtml(item.paidBy)}</div></div>
-            <div class="detail"><div class="k">Amount</div><div class="v">${escapeHtml(getItemAmount(item) || '—')}</div></div>
+            <div class="detail"><div class="k">Amount</div><div class="v">${item.amount != null ? '$' + Number(item.amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '—'}</div></div>
           </div>
           <div class="row">
             <button data-kind="promo" data-action="copyTitle" data-id="${escapeHtml(item.id)}">Copy title</button>
@@ -470,36 +470,20 @@
       const date = byId('promoDate').value;
       const videoTitle = byId('promoVideoTitle').value.trim();
       const paidBy = byId('promoPaidBy').value.trim();
-      const amount = byId('promoAmount').value.trim();
-
-      if (!platform || !date || !videoTitle || !paidBy || !amount) {
-        return setMsg(byId('promoSubmitMsg'), 'All promotion fields are required.', false);
-      }
-
+      const amountRaw = byId('promoAmount').value.trim();
+      const amount = amountRaw !== '' ? parseFloat(amountRaw) : null;
+      if (!platform || !date || !videoTitle || !paidBy) return setMsg(byId('promoSubmitMsg'), 'All promotion fields are required.', false);
       setMsg(byId('promoSubmitMsg'), 'Saving…');
-
       try {
         await api('/api/promotions', {
           method: 'POST',
-          body: JSON.stringify({
-            code: accessCode,
-            platform,
-            date,
-            videoTitle,
-            paidBy,
-            amount,
-            promoAmount: amount,
-            dollarAmount: amount
-          })
+          body: JSON.stringify({ code: accessCode, platform, date, videoTitle, paidBy, amount })
         });
-
         byId('promoPlatform').value = '';
         byId('promoDate').value = '';
         byId('promoVideoTitle').value = '';
         byId('promoPaidBy').value = '';
         byId('promoAmount').value = '';
-        setTodayIfEmpty();
-
         setMsg(byId('promoSubmitMsg'), 'Promotion record saved.', true);
         await loadPromoQueue();
       } catch (err) {
@@ -539,6 +523,33 @@
       } catch (err) {
         setMsg(msgEl, err.message || 'Update failed.', false);
       }
+    }
+
+    function exportPromoCSV() {
+      if (!promoItems.length) {
+        setMsg(byId('promoQueueMsg'), 'No records loaded to export.', false);
+        return;
+      }
+      const headers = ['id', 'videoTitle', 'platform', 'date', 'paidBy', 'amount', 'status', 'createdAt', 'completedAt'];
+      const rows = promoItems.map(item =>
+        headers.map(h => {
+          if ((h === 'createdAt' || h === 'completedAt') && item[h])
+            return '"' + fmtDate(item[h]).replace(/"/g, '""') + '"';
+          const v = item[h] != null ? String(item[h]) : '';
+          return '"' + v.replace(/"/g, '""') + '"';
+        }).join(',')
+      );
+      const csv = [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'promotions-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setMsg(byId('promoQueueMsg'), 'Exported ' + promoItems.length + ' record(s).', true);
     }
 
     async function deleteCompleted(kind) {
@@ -590,15 +601,14 @@
       byId('promoVideoTitle').value = '';
       byId('promoPaidBy').value = '';
       byId('promoAmount').value = '';
-      setTodayIfEmpty();
       setMsg(byId('promoSubmitMsg'), '');
     });
     byId('promoRefreshBtn').addEventListener('click', loadPromoQueue);
     byId('promoDeleteCompletedBtn').addEventListener('click', () => deleteCompleted('promo'));
+    byId('promoExportBtn').addEventListener('click', exportPromoCSV);
     byId('promoFilter').addEventListener('change', renderPromoQueue);
 
-    autoUnlockIfSaved();
-    setTodayIfEmpty();
+    setTimeout(autoUnlockIfSaved, 0);
   </script>
 </body>
 </html>
