@@ -253,6 +253,7 @@
           <div class="row">
             <button class="primary" id="promoRefreshBtn">Refresh records</button>
             <button class="danger" id="promoDeleteCompletedBtn">Delete completed</button>
+            <button id="promoExportBtn">Export CSV</button>
           </div>
           <div id="promoQueueMsg" class="msg"></div>
           <p class="small">This tracker is shared. Every refresh pulls the latest promotion records from the remote store.</p>
@@ -268,7 +269,7 @@
   </div>
 
   <script>
-  
+
     const API_BASE = 'https://thwf-podcast-prompt-queue.zdjimas.workers.dev';
     const CODE_STORAGE_KEY = 'thwf_shared_code';
     let accessCode = '';
@@ -541,6 +542,33 @@
       }
     }
 
+    function exportPromoCSV() {
+      if (!promoItems.length) {
+        setMsg(byId('promoQueueMsg'), 'No records loaded to export.', false);
+        return;
+      }
+      const headers = ['id', 'videoTitle', 'platform', 'date', 'paidBy', 'amount', 'status', 'createdAt', 'completedAt'];
+      const rows = promoItems.map(item =>
+        headers.map(h => {
+          if ((h === 'createdAt' || h === 'completedAt') && item[h])
+            return '"' + fmtDate(item[h]).replace(/"/g, '""') + '"';
+          const v = h === 'amount' ? (getItemAmount(item) || '') : (item[h] != null ? String(item[h]) : '');
+          return '"' + v.replace(/"/g, '""') + '"';
+        }).join(',')
+      );
+      const csv = [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'promotions-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setMsg(byId('promoQueueMsg'), 'Exported ' + promoItems.length + ' record(s).', true);
+    }
+
     async function deleteCompleted(kind) {
       const path = kind === 'podcast' ? '/api/podcast/completed' : '/api/promotions/completed';
       const msgEl = kind === 'podcast' ? byId('podcastQueueMsg') : byId('promoQueueMsg');
@@ -595,6 +623,7 @@
     });
     byId('promoRefreshBtn').addEventListener('click', loadPromoQueue);
     byId('promoDeleteCompletedBtn').addEventListener('click', () => deleteCompleted('promo'));
+    byId('promoExportBtn').addEventListener('click', exportPromoCSV);
     byId('promoFilter').addEventListener('change', renderPromoQueue);
 
     autoUnlockIfSaved();
